@@ -10,6 +10,17 @@ pub struct Database { connection: Connection }
 #[derive(Debug, Serialize)] #[serde(rename_all = "camelCase")]
 pub struct InventoryRow { pub device_entity_id: String, pub sort_name: String, pub device_type: String, pub primary_ip_display: Option<String>, pub connection_state: String, pub connection_summary: String, pub status: String, pub last_seen_at: Option<String> }
 #[derive(Debug, Error)] pub enum DatabaseError { #[error("database error: {0}")] Sqlite(#[from] rusqlite::Error) }
+
+fn scope_kind_from_storage(value: &str) -> Option<crate::core_domain::DiscoveryScopeKind> {
+    match value {
+        "cidr" => Some(crate::core_domain::DiscoveryScopeKind::Cidr),
+        "single_ip" => Some(crate::core_domain::DiscoveryScopeKind::SingleIp),
+        "seed_device" => Some(crate::core_domain::DiscoveryScopeKind::SeedDevice),
+        "site_context" => Some(crate::core_domain::DiscoveryScopeKind::SiteContext),
+        _ => None,
+    }
+}
+
 impl Database {
     pub fn in_memory() -> Result<Self, DatabaseError> { let mut value = Self { connection: Connection::open_in_memory()? }; value.migrate()?; Ok(value) }
     pub fn open(path: &Path) -> Result<Self, DatabaseError> { let mut value = Self { connection: Connection::open(path)? }; value.migrate()?; Ok(value) }
@@ -78,12 +89,8 @@ impl Database {
             let target: String = row.get(2)?;
             let enabled: i32 = row.get(3)?;
             
-            let kind = match kind_str.as_str() {
-                "cidr" => crate::core_domain::DiscoveryScopeKind::Cidr,
-                "single_ip" => crate::core_domain::DiscoveryScopeKind::SingleIp,
-                "seed_device" => crate::core_domain::DiscoveryScopeKind::SeedDevice,
-                "site_context" => crate::core_domain::DiscoveryScopeKind::SiteContext,
-                _ => crate::core_domain::DiscoveryScopeKind::Cidr,
+            let Some(kind) = scope_kind_from_storage(&kind_str) else {
+                return Err(rusqlite::Error::InvalidQuery);
             };
             
             let id = Uuid::parse_str(&id_str).map_err(|_| rusqlite::Error::InvalidQuery)?;
@@ -125,6 +132,12 @@ impl Database {
     }
 }
 #[cfg(test)] mod tests { use super::*;
+    #[test]
+    fn unknown_scope_kind_is_not_coerced_to_cidr() {
+        assert!(scope_kind_from_storage("future_kind").is_none());
+        assert!(matches!(scope_kind_from_storage("cidr"), Some(crate::core_domain::DiscoveryScopeKind::Cidr)));
+    }
+
     #[test] fn initializes_a_file_database() {
         let path = std::env::temp_dir().join(format!("network-analyzer-{}.sqlite", Uuid::new_v4()));
         let database = Database::open(&path).expect("open");

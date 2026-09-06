@@ -25,9 +25,18 @@ export default function App() {
   const [profileId, setProfileId] = useState<string | null>(null);
   const [preflightOpen, setPreflightOpen] = useState(false);
 
-  const handleProjectReady = async (projectId: string) => {
-    const profileRes = await getDefaultProfile(projectId);
-    if (profileRes.ok && profileRes.data) setProfileId(profileRes.data.profileId);
+  const handleProjectReady = async (projectId: string): Promise<boolean> => {
+    setProfileId(null);
+    try {
+      const profileRes = await getDefaultProfile(projectId);
+      if (profileRes.ok && profileRes.data) {
+        setProfileId(profileRes.data.profileId);
+        return true;
+      }
+    } catch {
+      // Keep the previous profile cleared so Preflight cannot run against a stale project.
+    }
+    return false;
   };
 
   return (
@@ -136,7 +145,7 @@ function Page({ title, message }: { title: string; message: string }) {
   ); 
 }
 
-function ScopeForm({ onStartPreflight, onProjectReady }: { onStartPreflight: () => void; onProjectReady: (projectId: string) => Promise<void> }) {
+function ScopeForm({ onStartPreflight, onProjectReady }: { onStartPreflight: () => void; onProjectReady: (projectId: string) => Promise<boolean> }) {
   const [kind, setKind] = useState<ScopeKind>("cidr");
   const [target, setTarget] = useState("");
   const [projectName, setProjectName] = useState("");
@@ -176,8 +185,12 @@ function ScopeForm({ onStartPreflight, onProjectReady }: { onStartPreflight: () 
     try {
       const response = await initializeProject(projectName, kind, target);
       if (response.ok && response.data) {
+        const profileReady = await onProjectReady(response.data.projectId);
+        if (!profileReady) {
+          setResult({ ok: false, message: "Project と Scope は保存されましたが、Preflight 用 Profile を取得できませんでした。" });
+          return;
+        }
         setResult({ ok: true, message: "Project と明示した Scope を保存しました。" });
-        await onProjectReady(response.data.projectId);
         setSavedScope({ kind, target: target.trim() });
       } else {
         setResult({ ok: false, message: response.error?.message ?? "Project を保存できませんでした。" });

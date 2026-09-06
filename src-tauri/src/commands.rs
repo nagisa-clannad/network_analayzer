@@ -96,6 +96,7 @@ pub fn scan_preflight(state: State<'_, AppState>, request: ScanPreflightRequest)
 
     if profile.validate().is_err()
         || scopes.is_empty()
+        || !scopes.iter().any(|scope| scope.enabled)
         || scopes.iter().any(|scope| scope.validate().is_err())
         || profile.scope_ids.len() != scopes.len()
         || profile.scope_ids.iter().any(|id| !scopes.iter().any(|scope| scope.id == *id))
@@ -165,7 +166,7 @@ pub fn preflight_local_network() -> ApiEnvelope<crate::core_domain::LocalNetwork
     match provider.collect_network_info() {
         Ok(result) => ApiEnvelope::success(crate::core_domain::LocalNetworkPreflight {
             provider_id: "local_network".to_string(),
-            provider_version: "0.1.0".to_string(),
+            provider_version: env!("CARGO_PKG_VERSION").to_string(),
             os: std::env::consts::OS.to_string(),
             capabilities,
             adapters: result.adapters,

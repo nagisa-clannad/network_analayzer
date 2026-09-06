@@ -183,4 +183,8 @@ pub enum DomainError {
         let evidence = Evidence { id: Uuid::new_v4(), target_entity_id: Uuid::new_v4(), attribute: "physical_port".into(), source_type: "fixture".into(), confidence: 1.0, assertion_state: AssertionState::Known };
         assert_eq!(evidence.assertion_state, AssertionState::Known);
     }
+    #[test] fn scope_rejects_control_characters_without_guessing_target_kind() {
+        let scope = DiscoveryScope { id: Uuid::new_v4(), kind: DiscoveryScopeKind::SiteContext, target: "site\nname".into(), enabled: true };
+        assert!(matches!(scope.validate(), Err(DomainError::InvalidScope)));
+    }
 }
