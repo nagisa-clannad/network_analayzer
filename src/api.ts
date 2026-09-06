@@ -10,6 +10,18 @@ export type ProviderCapabilities = {
   arpNdp: ProviderCapabilityState;
   route: ProviderCapabilityState;
   localNetwork: ProviderCapabilityState;
+  interfaceEnumeration: ProviderCapabilityState;
+  rawPacket: ProviderCapabilityState;
+};
+
+export type LocalNetworkPreflight = {
+  providerId: string;
+  providerVersion: string;
+  os: string;
+  capabilities: ProviderCapabilities;
+  interfaceCount: number;
+  interfaces: Array<{ name: string; kind: string; adapterName?: string; ips: string[]; physicalPortState: string }>;
+  diagnostics: string[];
 };
 
 export type PreflightReport = {
@@ -31,6 +43,11 @@ export async function validateScope(kind: ScopeKind, target: string): Promise<Ap
   return invoke<ApiEnvelope<{ valid: boolean; readOnly: boolean }>>("validate_scope", { request: { kind, target } });
 }
 
+export async function initializeProject(displayName: string, scopeKind: ScopeKind, scopeTarget: string): Promise<ApiEnvelope<{ projectId: string }>> {
+  if (!("__TAURI_INTERNALS__" in window)) return desktopUnavailable();
+  return invoke<ApiEnvelope<{ projectId: string }>>("initialize_project", { request: { displayName, scopeKind, scopeTarget } });
+}
+
 export async function getDefaultProfile(projectId: string): Promise<ApiEnvelope<{ profileId: string }>> {
   if (!("__TAURI_INTERNALS__" in window)) return desktopUnavailable();
   return invoke<ApiEnvelope<{ profileId: string }>>("get_default_profile", { request: { projectId } });
@@ -39,4 +56,9 @@ export async function getDefaultProfile(projectId: string): Promise<ApiEnvelope<
 export async function scanPreflight(profileId: string): Promise<ApiEnvelope<PreflightReport>> {
   if (!("__TAURI_INTERNALS__" in window)) return desktopUnavailable();
   return invoke<ApiEnvelope<PreflightReport>>("scan_preflight", { request: { profileId } });
+}
+
+export async function preflightLocalNetwork(): Promise<ApiEnvelope<LocalNetworkPreflight>> {
+  if (!("__TAURI_INTERNALS__" in window)) return desktopUnavailable();
+  return invoke<ApiEnvelope<LocalNetworkPreflight>>("preflight_local_network");
 }

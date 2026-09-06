@@ -2,11 +2,13 @@ import { useState, useEffect } from "react";
 import { 
   type ScopeKind, 
   validateScope, 
+  initializeProject,
   getDefaultProfile, 
   scanPreflight, 
-  type PreflightReport 
+  preflightLocalNetwork,
+  type PreflightReport,
+  type LocalNetworkPreflight,
 } from "./api";
-import { invoke } from "@tauri-apps/api/core";
 import "./App.css";
 
 type View = "inventory" | "topology" | "ipam" | "scope";
@@ -20,37 +22,13 @@ const navigation: ReadonlyArray<{ id: View; label: string }> = [
 export default function App() {
   const [view, setView] = useState<View>("inventory");
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [projectId, setProjectId] = useState<string | null>(null);
   const [profileId, setProfileId] = useState<string | null>(null);
   const [preflightOpen, setPreflightOpen] = useState(false);
 
-  useEffect(() => {
-    async function initProject() {
-      if (!("__TAURI_INTERNALS__" in window)) {
-        console.log("Not running in Tauri; using browser mock mode.");
-        return;
-      }
-      try {
-        // 1. プロジェクトの作成、または初期化
-        const projectRes = await invoke<{ ok: boolean; data?: { projectId: string }; error?: any }>("initialize_project", { 
-          request: { displayName: "Default Local Project" } 
-        });
-        if (projectRes.ok && projectRes.data) {
-          const pId = projectRes.data.projectId;
-          setProjectId(pId);
-          
-          // 2. 作成されたプロジェクトからデフォルトプロファイルを取得
-          const profileRes = await getDefaultProfile(pId);
-          if (profileRes.ok && profileRes.data) {
-            setProfileId(profileRes.data.profileId);
-          }
-        }
-      } catch (err) {
-        console.error("Failed to initialize project in Tauri backend:", err);
-      }
-    }
-    initProject();
-  }, []);
+  const handleProjectReady = async (projectId: string) => {
+    const profileRes = await getDefaultProfile(projectId);
+    if (profileRes.ok && profileRes.data) setProfileId(profileRes.data.profileId);
+  };
 
   return (
     <main className="app-shell">
@@ -63,7 +41,7 @@ export default function App() {
       </header>
       
       <div className="notice" role="status">
-        Discovery provider は未実装です。ネットワークへの接続、認証情報の取得、スキャンは行いません。
+        Discovery scan provider は未実装です。Preflight はローカル Interface の受動列挙だけを行い、認証情報・外部通信・スキャンは行いません。
       </div>
       
       <div className="workspace">
@@ -98,7 +76,7 @@ export default function App() {
               message="IP アドレスと割当は未観測です。IPv6 link-local は Network Context と Interface scope を伴って保存します。" 
             />
           )}
-          {view === "scope" && <ScopeForm onStartPreflight={() => setPreflightOpen(true)} />}
+          {view === "scope" && <ScopeForm onStartPreflight={() => setPreflightOpen(true)} onProjectReady={handleProjectReady} />}
         </section>
         
         {drawerOpen && <Drawer close={() => setDrawerOpen(false)} />}
@@ -158,10 +136,13 @@ function Page({ title, message }: { title: string; message: string }) {
   ); 
 }
 
-function ScopeForm({ onStartPreflight }: { onStartPreflight: () => void }) {
+function ScopeForm({ onStartPreflight, onProjectReady }: { onStartPreflight: () => void; onProjectReady: (projectId: string) => Promise<void> }) {
   const [kind, setKind] = useState<ScopeKind>("cidr");
   const [target, setTarget] = useState("");
+  const [projectName, setProjectName] = useState("");
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const [localReport, setLocalReport] = useState<LocalNetworkPreflight | null>(null);
+  const [localError, setLocalError] = useState<string | null>(null);
   
   const submit = async () => {
     setResult(null);
@@ -176,6 +157,29 @@ function ScopeForm({ onStartPreflight }: { onStartPreflight: () => void }) {
       setResult({ ok: false, message: "Scope は検証できませんでした。ネットワークアクセスは行われていません。" });
     }
   };
+
+  const inspectLocalNetwork = async () => {
+    setLocalReport(null);
+    setLocalError(null);
+    try {
+      const response = await preflightLocalNetwork();
+      if (response.ok && response.data) setLocalReport(response.data);
+      else setLocalError(response.error?.message ?? "LocalNetwork capability を確認できませんでした。");
+    } catch {
+      setLocalError("LocalNetwork capability を確認できませんでした。ネットワーク scan は行われていません。");
+    }
+  };
+
+  const createProject = async () => {
+    setResult(null);
+    const response = await initializeProject(projectName, kind, target);
+    if (response.ok && response.data) {
+      setResult({ ok: true, message: "Project と明示した Scope を保存しました。" });
+      await onProjectReady(response.data.projectId);
+    } else {
+      setResult({ ok: false, message: response.error?.message ?? "Project を保存できませんでした。" });
+    }
+  };
   
   return (
     <>
@@ -186,6 +190,7 @@ function ScopeForm({ onStartPreflight }: { onStartPreflight: () => void }) {
         </div>
       </header>
       <div className="scope-card">
+        <label>Project 名<input value={projectName} onChange={(event) => setProjectName(event.target.value)} placeholder="ローカル環境" /></label>
         <label>
           Scope 種別
           <select value={kind} onChange={(event) => setKind(event.target.value as ScopeKind)}>
@@ -206,12 +211,21 @@ function ScopeForm({ onStartPreflight }: { onStartPreflight: () => void }) {
         <div className="button-group">
           <button onClick={submit}>形式を検証</button>
           <button className="secondary-btn" onClick={onStartPreflight}>Preflight レポートを確認</button>
+          <button className="secondary-btn" onClick={inspectLocalNetwork}>ローカル capability を確認</button>
+          <button className="secondary-btn" onClick={createProject}>Project / Scope を保存</button>
         </div>
         {result && <p className={result.ok ? "result ok" : "result error"}>{result.message}</p>}
-        <p className="subtle">Provider、OS 権限、Credential reference の preflight を検証できます。</p>
+        {localError && <p className="result error">{localError}</p>}
+        {localReport && <LocalCapabilityReport report={localReport} />}
+        <p className="subtle">LocalNetwork は Interface/address の受動列挙だけを行います。route、ARP/NDP、ICMP、raw packet は unsupported です。</p>
       </div>
     </>
   );
+}
+
+function LocalCapabilityReport({ report }: { report: LocalNetworkPreflight }) {
+  const label = (value: string) => value === "available" ? "利用可能" : value === "no_privilege" ? "権限不足" : "非対応";
+  return <section className="local-capability" aria-label="ローカル capability 結果"><h3>{report.providerId} / {report.os}</h3><p>Provider {report.providerVersion} — Interface {report.interfaceCount} 件。これは scan 完了を意味しません。</p><div className="capability-summary"><span>Interface 列挙: {label(report.capabilities.interfaceEnumeration)}</span><span>Route: {label(report.capabilities.route)}</span><span>ARP/NDP: {label(report.capabilities.arpNdp)}</span><span>ICMP: {label(report.capabilities.icmp)}</span><span>Raw packet: {label(report.capabilities.rawPacket)}</span></div><details><summary>取得した Interface 名とアドレスを表示</summary><ul>{report.interfaces.map((item) => <li key={item.name}>{item.name} ({item.kind}, physical port: {item.physicalPortState}) — {item.ips.join(", ") || "アドレスなし"}</li>)}</ul></details></section>;
 }
 
 function Drawer({ close }: { close: () => void }) { 
@@ -238,27 +252,8 @@ function PreflightModal({ profileId, close }: { profileId: string | null; close:
   useEffect(() => {
     async function loadPreflight() {
       if (!profileId) {
-        // Webブラウザ等でのモックデータ
-        setTimeout(() => {
-          setReport({
-            scopeTarget: "192.168.1.0/24",
-            scopeKind: "cidr",
-            activeProbeEnabled: false,
-            maxHosts: 1024,
-            estimatedTargets: 256,
-            capabilities: {
-              icmp: "no_privilege",
-              arpNdp: "available",
-              route: "available",
-              localNetwork: "available"
-            },
-            skippedFeatures: [
-              "非特権ユーザーのため、ICMP Echo (Ping) スキャンはスキップされます。管理者権限での実行を推奨します。",
-              "プロファイル制限により、未許可ポートへのアクティブ接続スキャンは無効化されています。"
-            ]
-          });
-          setLoading(false);
-        }, 600);
+        setError("Tauri desktop backend に接続されていません。Preflight は実行されませんでした。");
+        setLoading(false);
         return;
       }
 
@@ -377,11 +372,11 @@ function PreflightModal({ profileId, close }: { profileId: string | null; close:
             </div>
           </section>
 
-          {report.skippedFeatures && report.skipped_features.length > 0 && (
+          {report.skippedFeatures && report.skippedFeatures.length > 0 && (
             <section className="preflight-section">
               <h3>収集時のスキップ・警告事項</h3>
               <ul className="skipped-list">
-                {report.skipped_features.map((msg, index) => (
+                {report.skippedFeatures.map((msg, index) => (
                   <li key={index}><strong>※</strong> {msg}</li>
                 ))}
               </ul>
@@ -391,16 +386,7 @@ function PreflightModal({ profileId, close }: { profileId: string | null; close:
 
         <footer className="modal-footer">
           <button className="secondary-btn" onClick={close}>キャンセル</button>
-          <button 
-            className="primary-btn" 
-            disabled={isLimitExceeded} 
-            onClick={() => {
-              alert("安全な探索を開始します。進行状態は Scan プログレス画面で確認できます。");
-              close();
-            }}
-          >
-            探索スキャンを実行 (Read-Only)
-          </button>
+          <button className="primary-btn" disabled title="Discovery provider は未実装です">スキャンは Provider 実装後に有効</button>
         </footer>
       </div>
     </div>

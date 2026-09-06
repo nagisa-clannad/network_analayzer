@@ -1,0 +1,24 @@
+[package]
+name = "network-analyzer"
+version = "0.1.0"
+description = "Network Visualizer & IPAM Tool"
+authors = ["Gemini CLI"]
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[build-dependencies]
+tauri-build = { version = "2.0", features = [] }
+
+[dependencies]
+tauri = { version = "2.0", features = [] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+rusqlite = { version = "0.31.0", features = ["bundled"] }
+uuid = { version = "1.8.0", features = ["v4", "v7", "serde"] }
+chrono = { version = "0.4.38", features = ["serde"] }
+tokio = { version = "1.38.0", features = ["full"] }
+thiserror = "1.0.61"
+log = "0.4.21"
+env_logger = "0.11.3"
+get_if_addrs = "0.5.3"

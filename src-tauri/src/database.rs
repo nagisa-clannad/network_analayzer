@@ -19,20 +19,19 @@ impl Database {
         if applied.is_none() { let tx = self.connection.transaction()?; tx.execute_batch(MIGRATION_SQL)?; tx.execute("INSERT INTO schema_migrations(id) VALUES(?1)", [MIGRATION_ID])?; tx.commit()?; }
         Ok(())
     }
-    pub fn create_project(&mut self, name: &str) -> Result<String, DatabaseError> {
+    pub fn create_project(&mut self, name: &str, scope_kind: &str, scope_target: &str) -> Result<String, DatabaseError> {
         let id = Uuid::new_v4().to_string();
         let transaction = self.connection.transaction()?;
         transaction.execute("INSERT INTO entity_registry(id,entity_type) VALUES(?1,'project')", [&id])?;
         transaction.execute("INSERT INTO projects(entity_id,display_name) VALUES(?1,?2)", params![id, name.trim()])?;
         
-        let scope_id = Uuid::new_v4().to_string();
         let profile_id = Uuid::new_v4().to_string();
-        
+        let scope_id = Uuid::new_v4().to_string();
         transaction.execute(
-            "INSERT INTO discovery_scopes(id, project_id, scope_kind, target, enabled) VALUES(?1, ?2, 'cidr', '192.168.1.0/24', 1)",
-            [&scope_id, &id]
+            "INSERT INTO discovery_scopes(id, project_id, scope_kind, target, enabled) VALUES(?1, ?2, ?3, ?4, 1)",
+            params![scope_id, id, scope_kind, scope_target.trim()],
         )?;
-        
+
         transaction.execute(
             "INSERT INTO scan_profiles(id, project_id, name, read_only, active_probe_enabled) VALUES(?1, ?2, 'Standard Discovery', 1, 0)",
             [&profile_id, &id]
@@ -87,7 +86,7 @@ impl Database {
                 _ => crate::core_domain::DiscoveryScopeKind::Cidr,
             };
             
-            let id = Uuid::parse_str(&id_str).unwrap_or_else(|_| Uuid::new_v4());
+            let id = Uuid::parse_str(&id_str).map_err(|_| rusqlite::Error::InvalidQuery)?;
 
             Ok(crate::core_domain::DiscoveryScope {
                 id,
@@ -102,7 +101,7 @@ impl Database {
             scopes.push(s?);
         }
 
-        let p_uuid = Uuid::parse_str(&p_id).unwrap_or_else(|_| Uuid::new_v4());
+        let p_uuid = Uuid::parse_str(&p_id).map_err(|_| DatabaseError::Sqlite(rusqlite::Error::InvalidQuery))?;
         let scope_ids = scopes.iter().map(|s| s.id).collect();
 
         Ok(Some((
@@ -115,7 +114,7 @@ impl Database {
                 active_probe_enabled: active_probe_enabled != 0,
             },
             scopes
-        ))))
+        )))
     }
     pub fn inventory(&self) -> Result<Vec<InventoryRow>, DatabaseError> {
         let mut statement = self.connection.prepare("SELECT device_entity_id,sort_name,device_type,primary_ip_display,connection_state,connection_summary,status,last_seen_at FROM device_inventory_projections ORDER BY sort_name COLLATE NOCASE")?;
@@ -159,5 +158,15 @@ impl Database {
              VALUES('link','if-a','if-b','known','evidence')", [],
         );
         assert!(result.is_err(), "logical interfaces must be rejected by the database trigger");
+    }
+
+    #[test]
+    fn project_creation_persists_only_the_explicit_discovery_scope() {
+        let mut database = Database::in_memory().expect("open");
+        let project_id = database.create_project("explicit scope", "cidr", "198.51.100.0/24").expect("project");
+        let profile_id = database.get_default_profile_id(&project_id).expect("profile query").expect("default profile");
+        let (_, scopes) = database.get_profile_and_scopes(&profile_id).expect("profile query").expect("profile");
+        assert_eq!(scopes.len(), 1);
+        assert_eq!(scopes[0].target, "198.51.100.0/24");
     }
 }

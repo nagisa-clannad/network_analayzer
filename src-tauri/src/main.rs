@@ -20,6 +20,7 @@ fn main() {
             commands::list_inventory,
             commands::get_default_profile,
             commands::scan_preflight,
+            commands::preflight_local_network,
         ])
         .run(tauri::generate_context!())
         .expect("failed to run Network Analyzer");

@@ -58,7 +58,7 @@ pub struct Evidence { pub id: Uuid, pub target_entity_id: Uuid, pub attribute: S
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
-pub enum InterfaceKind { Physical, Virtual, Vlan, Svi, Bridge, Bond, Lag, Tunnel, Loopback }
+pub enum InterfaceKind { Physical, Virtual, Vlan, Svi, Bridge, Bond, Lag, Tunnel, Loopback, Unknown }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct InterfaceEndpoint { pub interface_id: Uuid, pub kind: InterfaceKind, pub has_physical_port_evidence: bool }
@@ -88,6 +88,8 @@ pub struct ProviderCapabilities {
     pub arp_ndp: ProviderCapabilityState,
     pub route: ProviderCapabilityState,
     pub local_network: ProviderCapabilityState,
+    pub interface_enumeration: ProviderCapabilityState,
+    pub raw_packet: ProviderCapabilityState,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -116,6 +118,7 @@ pub struct LocalInterface {
     pub kind: InterfaceKind,
     pub adapter_name: Option<String>,
     pub ips: Vec<String>,
+    pub physical_port_state: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -146,6 +149,18 @@ pub struct LocalNetworkResult {
 pub trait PlatformNetworkProvider {
     fn check_capabilities(&self) -> ProviderCapabilities;
     fn collect_network_info(&self) -> Result<LocalNetworkResult, String>;
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalNetworkPreflight {
+    pub provider_id: String,
+    pub provider_version: String,
+    pub os: String,
+    pub capabilities: ProviderCapabilities,
+    pub interface_count: usize,
+    pub interfaces: Vec<LocalInterface>,
+    pub diagnostics: Vec<String>,
 }
 
 #[derive(Debug, Error)]

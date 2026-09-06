@@ -8,12 +8,15 @@ pub struct ApiError { pub code: &'static str, pub message: String }
 #[derive(Debug, Serialize)] #[serde(rename_all = "camelCase")]
 pub struct ApiEnvelope<T: Serialize> { pub ok: bool, pub data: Option<T>, pub error: Option<ApiError> }
 impl<T: Serialize> ApiEnvelope<T> { fn success(data: T) -> Self { Self { ok: true, data: Some(data), error: None } } fn failure(code: &'static str, message: impl Into<String>) -> Self { Self { ok: false, data: None, error: Some(ApiError { code, message: message.into() }) } } }
-#[derive(Debug, Deserialize)] #[serde(rename_all = "camelCase")] pub struct InitializeProjectRequest { pub display_name: String }
+#[derive(Debug, Deserialize)] #[serde(rename_all = "camelCase")] pub struct InitializeProjectRequest { pub display_name: String, pub scope_kind: DiscoveryScopeKind, pub scope_target: String }
 #[derive(Debug, Serialize)] #[serde(rename_all = "camelCase")] pub struct ProjectCreated { pub project_id: String }
 #[tauri::command] pub fn initialize_project(state: State<'_, AppState>, request: InitializeProjectRequest) -> ApiEnvelope<ProjectCreated> {
     let name = request.display_name.trim(); if name.is_empty() || name.len() > 120 { return ApiEnvelope::failure("invalid_project_name", "Project name must be 1 to 120 characters."); }
+    let scope = DiscoveryScope { id: Uuid::new_v4(), kind: request.scope_kind, target: request.scope_target, enabled: true };
+    if scope.validate().is_err() { return ApiEnvelope::failure("invalid_scope", "A valid explicit Discovery Scope is required."); }
     let mut database = match state.database.lock() { Ok(value) => value, Err(_) => return ApiEnvelope::failure("state_unavailable", "Application state is unavailable.") };
-    match database.create_project(name) { Ok(project_id) => ApiEnvelope::success(ProjectCreated { project_id }), Err(_) => ApiEnvelope::failure("storage_error", "Project could not be stored.") }
+    let scope_kind = serde_json::to_string(&scope.kind).unwrap_or_else(|_| "\"cidr\"".to_string()).trim_matches('"').to_string();
+    match database.create_project(name, &scope_kind, &scope.target) { Ok(project_id) => ApiEnvelope::success(ProjectCreated { project_id }), Err(_) => ApiEnvelope::failure("storage_error", "Project could not be stored.") }
 }
 #[derive(Debug, Deserialize)] #[serde(rename_all = "camelCase")] pub struct ValidateScopeRequest { pub kind: DiscoveryScopeKind, pub target: String }
 #[derive(Debug, Serialize)] #[serde(rename_all = "camelCase")] pub struct ScopeValidation { pub valid: bool, pub read_only: bool }
@@ -80,6 +83,10 @@ pub fn scan_preflight(state: State<'_, AppState>, request: ScanPreflightRequest)
         return ApiEnvelope::failure("profile_not_found", "Scan profile not found.");
     };
 
+    if profile.validate().is_err() || scopes.iter().any(|scope| scope.validate().is_err()) {
+        return ApiEnvelope::failure("invalid_profile", "The stored profile or scope is not safe to run. No scan was started.");
+    }
+
     let mut estimated_targets = 0;
     let mut scope_target = String::new();
     let mut scope_kind = crate::core_domain::DiscoveryScopeKind::Cidr;
@@ -117,6 +124,30 @@ pub fn scan_preflight(state: State<'_, AppState>, request: ScanPreflightRequest)
         capabilities,
         skipped_features,
     })
+}
+
+#[tauri::command]
+pub fn preflight_local_network() -> ApiEnvelope<crate::core_domain::LocalNetworkPreflight> {
+    use crate::core_domain::PlatformNetworkProvider;
+    let provider = crate::platform_provider::RealPlatformNetworkProvider;
+    let capabilities = provider.check_capabilities();
+    match provider.collect_network_info() {
+        Ok(result) => ApiEnvelope::success(crate::core_domain::LocalNetworkPreflight {
+            provider_id: "local_network".to_string(),
+            provider_version: "0.1.0".to_string(),
+            os: std::env::consts::OS.to_string(),
+            capabilities,
+            interface_count: result.interfaces.len(),
+            interfaces: result.interfaces,
+            diagnostics: vec![
+                "route_unsupported".to_string(),
+                "arp_ndp_unsupported".to_string(),
+                "icmp_unsupported".to_string(),
+                "raw_packet_unsupported".to_string(),
+            ],
+        }),
+        Err(_) => ApiEnvelope::failure("provider_unavailable", "Local interface enumeration was unavailable. No scan was started."),
+    }
 }
 
 fn estimate_targets(target: &str, kind: &crate::core_domain::DiscoveryScopeKind) -> usize {
