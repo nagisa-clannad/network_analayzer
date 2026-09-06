@@ -14,19 +14,19 @@ impl Database {
     pub fn in_memory() -> Result<Self, DatabaseError> { let mut value = Self { connection: Connection::open_in_memory()? }; value.migrate()?; Ok(value) }
     pub fn open(path: &Path) -> Result<Self, DatabaseError> { let mut value = Self { connection: Connection::open(path)? }; value.migrate()?; Ok(value) }
     fn migrate(&mut self) -> Result<(), DatabaseError> {
-        self.connection.execute_batch("PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS schema_migrations (id TEXT PRIMARY KEY, applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);")?;
+        self.connection.execute_batch("PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA busy_timeout=5000; PRAGMA trusted_schema=OFF; CREATE TABLE IF NOT EXISTS schema_migrations (id TEXT PRIMARY KEY, applied_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')));")?;
         let applied: Option<String> = self.connection.query_row("SELECT id FROM schema_migrations WHERE id=?1", [MIGRATION_ID], |row| row.get(0)).optional()?;
         if applied.is_none() { let tx = self.connection.transaction()?; tx.execute_batch(MIGRATION_SQL)?; tx.execute("INSERT INTO schema_migrations(id) VALUES(?1)", [MIGRATION_ID])?; tx.commit()?; }
         Ok(())
     }
     pub fn create_project(&mut self, name: &str, scope_kind: &str, scope_target: &str) -> Result<String, DatabaseError> {
-        let id = Uuid::new_v4().to_string();
+        let id = Uuid::now_v7().to_string();
         let transaction = self.connection.transaction()?;
         transaction.execute("INSERT INTO entity_registry(id,entity_type) VALUES(?1,'project')", [&id])?;
         transaction.execute("INSERT INTO projects(entity_id,display_name) VALUES(?1,?2)", params![id, name.trim()])?;
         
-        let profile_id = Uuid::new_v4().to_string();
-        let scope_id = Uuid::new_v4().to_string();
+        let profile_id = Uuid::now_v7().to_string();
+        let scope_id = Uuid::now_v7().to_string();
         transaction.execute(
             "INSERT INTO discovery_scopes(id, project_id, scope_kind, target, enabled) VALUES(?1, ?2, ?3, ?4, 1)",
             params![scope_id, id, scope_kind, scope_target.trim()],
@@ -135,6 +135,21 @@ impl Database {
         let shm_path = path.with_file_name(format!("{}-shm", path.file_name().expect("file name").to_string_lossy()));
         let _ = std::fs::remove_file(wal_path);
         let _ = std::fs::remove_file(shm_path);
+    }
+
+    #[test]
+    fn applies_durable_sqlite_pragmas_and_canonical_timestamps() {
+        let mut database = Database::in_memory().expect("open");
+        let synchronous: i64 = database.connection.query_row("PRAGMA synchronous", [], |row| row.get(0)).expect("synchronous");
+        let busy_timeout: i64 = database.connection.query_row("PRAGMA busy_timeout", [], |row| row.get(0)).expect("busy timeout");
+        let trusted_schema: i64 = database.connection.query_row("PRAGMA trusted_schema", [], |row| row.get(0)).expect("trusted schema");
+        assert_eq!(synchronous, 2, "SQLite FULL synchronous is required");
+        assert_eq!(busy_timeout, 5000);
+        assert_eq!(trusted_schema, 0);
+
+        let project_id = database.create_project("timestamp check", "single_ip", "192.0.2.10").expect("project");
+        let created_at: String = database.connection.query_row("SELECT created_at FROM projects WHERE entity_id = ?1", [&project_id], |row| row.get(0)).expect("created at");
+        assert!(chrono::DateTime::parse_from_rfc3339(&created_at).is_ok(), "timestamps must be RFC3339: {created_at}");
     }
 
     #[test]

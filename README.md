@@ -10,7 +10,7 @@
 - SQLite migration、foreign key、単一 running scan 制約、PhysicalLink DB trigger、空の Inventory projection
 - Discovery provider 未実装の scan 要求を必ず拒否する IPC と、read-only / Unknown を明示する最小 UI
 - Preflight 画面から Tauri IPC へ接続した CIDR / 単一 IP / Seed / Context の Scope 形式検証
-- LocalNetwork capability（OS API による受動的な Interface/address 列挙）と、unsupported の route / ARP/NDP / ICMP / raw packet 表示
+- LocalNetwork capability（OS API による受動的な NIC / Interface / address 列挙）と、unsupported の route / ARP/NDP / ICMP / raw packet 表示。OS API で根拠が得られない物理・仮想種別は `unknown` のまま表示
 
 ## 未実装
 

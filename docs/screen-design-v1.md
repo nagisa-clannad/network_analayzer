@@ -222,7 +222,7 @@ Preflight は Scan の唯一の開始画面とし、次を表示する。
 
 #### LocalNetwork capability の確認
 
-Preflight / Scope 画面の「ローカル capability を確認」は、Tauri desktop backend の OS API を使った Interface/address の受動列挙だけを実行する。provider 名、OS、Interface 件数、`available` / `no_privilege` / `unsupported` を表示し、route、ARP/NDP、ICMP、raw packet は `unsupported` と明示する。取得した Interface 名・アドレスは折りたたみの詳細操作でだけ表示し、ここで Scan Session を開始しない。ブラウザでは `desktop_backend_unavailable` と表示し、モック値を返さない。
+Preflight / Scope 画面の「ローカル capability を確認」は、Tauri desktop backend の OS API を使った NIC / Interface / address の受動列挙だけを実行する。provider 名、OS、Adapter / Interface 件数、`available` / `no_privilege` / `unsupported` を表示し、OS API から物理・仮想種別を確定できない場合は `unknown` と表示する。route、ARP/NDP、ICMP、raw packet は `unsupported` と明示する。取得した NIC 名、Interface 名、アドレスは折りたたみの詳細操作でだけ表示し、ここで Scan Session を開始しない。ブラウザでは `desktop_backend_unavailable` と表示し、モック値を返さない。
 
 ### 7.2 Progress screen
 

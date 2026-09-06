@@ -64,6 +64,10 @@ fn collect_local_interfaces() -> Result<LocalNetworkResult, String> {
         let kind = interface_kind(is_loopback);
         let ip = match os_interface.addr {
             IfAddr::V4(address) => address.ip.to_string(),
+            // A local link-local IPv6 address is only meaningful with its
+            // interface zone. Keep that context instead of exposing an
+            // ambiguous bare fe80:: value.
+            IfAddr::V6(address) if address.ip.is_unicast_link_local() => format!("{}%{}", address.ip, name),
             IfAddr::V6(address) => address.ip.to_string(),
         };
 

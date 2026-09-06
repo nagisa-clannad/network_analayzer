@@ -19,6 +19,7 @@ export type LocalNetworkPreflight = {
   providerVersion: string;
   os: string;
   capabilities: ProviderCapabilities;
+  adapters: Array<{ name: string; kind: string }>;
   interfaceCount: number;
   interfaces: Array<{ name: string; kind: string; adapterName?: string; ips: string[]; physicalPortState: string }>;
   diagnostics: string[];

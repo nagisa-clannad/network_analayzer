@@ -140,6 +140,7 @@ function ScopeForm({ onStartPreflight, onProjectReady }: { onStartPreflight: () 
   const [kind, setKind] = useState<ScopeKind>("cidr");
   const [target, setTarget] = useState("");
   const [projectName, setProjectName] = useState("");
+  const [savedScope, setSavedScope] = useState<{ kind: ScopeKind; target: string } | null>(null);
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
   const [localReport, setLocalReport] = useState<LocalNetworkPreflight | null>(null);
   const [localError, setLocalError] = useState<string | null>(null);
@@ -172,12 +173,17 @@ function ScopeForm({ onStartPreflight, onProjectReady }: { onStartPreflight: () 
 
   const createProject = async () => {
     setResult(null);
-    const response = await initializeProject(projectName, kind, target);
-    if (response.ok && response.data) {
-      setResult({ ok: true, message: "Project と明示した Scope を保存しました。" });
-      await onProjectReady(response.data.projectId);
-    } else {
-      setResult({ ok: false, message: response.error?.message ?? "Project を保存できませんでした。" });
+    try {
+      const response = await initializeProject(projectName, kind, target);
+      if (response.ok && response.data) {
+        setResult({ ok: true, message: "Project と明示した Scope を保存しました。" });
+        await onProjectReady(response.data.projectId);
+        setSavedScope({ kind, target: target.trim() });
+      } else {
+        setResult({ ok: false, message: response.error?.message ?? "Project を保存できませんでした。" });
+      }
+    } catch {
+      setResult({ ok: false, message: "Project を保存できませんでした。ネットワークアクセスは行われていません。" });
     }
   };
   
@@ -210,7 +216,7 @@ function ScopeForm({ onStartPreflight, onProjectReady }: { onStartPreflight: () 
         </label>
         <div className="button-group">
           <button onClick={submit}>形式を検証</button>
-          <button className="secondary-btn" onClick={onStartPreflight}>Preflight レポートを確認</button>
+          <button className="secondary-btn" onClick={onStartPreflight} disabled={!savedScope || savedScope.kind !== kind || savedScope.target !== target.trim()} title="先に現在の Project / Scope を保存してください">Preflight レポートを確認</button>
           <button className="secondary-btn" onClick={inspectLocalNetwork}>ローカル capability を確認</button>
           <button className="secondary-btn" onClick={createProject}>Project / Scope を保存</button>
         </div>
@@ -225,7 +231,7 @@ function ScopeForm({ onStartPreflight, onProjectReady }: { onStartPreflight: () 
 
 function LocalCapabilityReport({ report }: { report: LocalNetworkPreflight }) {
   const label = (value: string) => value === "available" ? "利用可能" : value === "no_privilege" ? "権限不足" : "非対応";
-  return <section className="local-capability" aria-label="ローカル capability 結果"><h3>{report.providerId} / {report.os}</h3><p>Provider {report.providerVersion} — Interface {report.interfaceCount} 件。これは scan 完了を意味しません。</p><div className="capability-summary"><span>Interface 列挙: {label(report.capabilities.interfaceEnumeration)}</span><span>Route: {label(report.capabilities.route)}</span><span>ARP/NDP: {label(report.capabilities.arpNdp)}</span><span>ICMP: {label(report.capabilities.icmp)}</span><span>Raw packet: {label(report.capabilities.rawPacket)}</span></div><details><summary>取得した Interface 名とアドレスを表示</summary><ul>{report.interfaces.map((item) => <li key={item.name}>{item.name} ({item.kind}, physical port: {item.physicalPortState}) — {item.ips.join(", ") || "アドレスなし"}</li>)}</ul></details></section>;
+  return <section className="local-capability" aria-label="ローカル capability 結果"><h3>{report.providerId} / {report.os}</h3><p>Provider {report.providerVersion} — Adapter {report.adapters.length} 件 / Interface {report.interfaceCount} 件。これは scan 完了を意味しません。</p><div className="capability-summary"><span>Interface 列挙: {label(report.capabilities.interfaceEnumeration)}</span><span>Route: {label(report.capabilities.route)}</span><span>ARP/NDP: {label(report.capabilities.arpNdp)}</span><span>ICMP: {label(report.capabilities.icmp)}</span><span>Raw packet: {label(report.capabilities.rawPacket)}</span></div><details><summary>取得した NIC / Interface 名とアドレスを表示</summary><ul>{report.adapters.map((adapter) => <li key={`adapter-${adapter.name}`}>NIC {adapter.name} ({adapter.kind})</li>)}{report.interfaces.map((item) => <li key={`interface-${item.name}`}>Interface {item.name} ({item.kind}, physical port: {item.physicalPortState}, adapter: {item.adapterName ?? "未観測"}) — {item.ips.join(", ") || "アドレスなし"}</li>)}</ul></details></section>;
 }
 
 function Drawer({ close }: { close: () => void }) { 
@@ -252,7 +258,7 @@ function PreflightModal({ profileId, close }: { profileId: string | null; close:
   useEffect(() => {
     async function loadPreflight() {
       if (!profileId) {
-        setError("Tauri desktop backend に接続されていません。Preflight は実行されませんでした。");
+        setError("先に Project / Scope を保存してください。Preflight は実行されませんでした。");
         setLoading(false);
         return;
       }

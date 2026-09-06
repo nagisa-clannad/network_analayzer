@@ -16,7 +16,7 @@ pub struct DiscoveryScope { pub id: Uuid, pub kind: DiscoveryScopeKind, pub targ
 impl DiscoveryScope {
     pub fn validate(&self) -> Result<(), DomainError> {
         let target = self.target.trim();
-        if target.is_empty() || target.len() > 255 { return Err(DomainError::InvalidScope); }
+        if target.is_empty() || target.chars().count() > 255 || target.chars().any(char::is_control) { return Err(DomainError::InvalidScope); }
         match self.kind {
             DiscoveryScopeKind::Cidr => {
                 let Some((address, prefix)) = target.split_once('/') else { return Err(DomainError::InvalidScope); };
@@ -158,6 +158,7 @@ pub struct LocalNetworkPreflight {
     pub provider_version: String,
     pub os: String,
     pub capabilities: ProviderCapabilities,
+    pub adapters: Vec<LocalAdapter>,
     pub interface_count: usize,
     pub interfaces: Vec<LocalInterface>,
     pub diagnostics: Vec<String>,

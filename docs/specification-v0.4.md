@@ -1,7 +1,7 @@
 # ネットワーク構成自動可視化・IPAMツール 統合仕様書 v0.4.11
 
 - 状態: Phase 1 foundation / LocalNetwork capability 実装済み（Discovery scan Provider / Resolver は未実装）
-- 更新日: 2026-09-04
+- 更新日: 2026-09-06
 - 本文書の対象: ローカルで動作するクロスプラットフォームのデスクトップアプリケーション
 - 前提: v0.3 の「取得できない情報を推測で確定しない」という方針を継承し、曖昧だった安全性、時系列、差分、識別子の要件を規範化する。
 
@@ -521,4 +521,5 @@ Phase 1 の SQLite schema、table/column、FK、一意制約、projection 更新
 | SQLite foundation migration / Inventory projection | 実装済み | 現在は foundation schema と空 projection。Observation からの resolver / projection 更新は未実装。 |
 | 画面 shell、Inventory、Drawer、Topology、IPAM、Preflight | 実装済み | `read-only`、`provider 未実装`、`Unknown` を表示し、traffic chart や擬似的な探索結果を表示しない。 |
 | LocalNetwork capability | 実装済み | OS API で local Interface/address を受動列挙。adapter/physical state は unknown/not_observed、route/ARP/NDP/ICMP/raw packet は unsupported。 |
+| Project / Scope 初期化 | 実装済み（foundation） | 利用者が入力した Project 名と明示した Scope を一件だけ保存する。Scope ごとの include/exclude、max_hosts/max_depth、approved_at、scope_targets は次の migration で追加し、未指定値を補完してはならない。 |
 | Discovery scan Provider、SecureStore、resolver、Diff、backup/restore | 未実装 | これらを実装・試験するまで、実ネットワークに対するスキャン機能を出荷しない。 |

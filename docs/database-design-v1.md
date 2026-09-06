@@ -1,6 +1,6 @@
 # ネットワーク構成自動可視化・IPAMツール DB設計 v1.1
 
-- 対象: 統合仕様書 v0.4.7 の Phase 1
+- 対象: 統合仕様書 v0.4.11 の Phase 1
 - DBMS: SQLite（Project 単位の DB ファイル）
 - 正本: `Observation` とその根拠から作る `Evidence`
 - 表示用: 正規化 Entity と Current State projection
@@ -21,6 +21,8 @@ Provider result
 - **ID は UUIDv7 を TEXT で保存する。** 時系列順に近い ID を使い、外部に露出しても連番を推測されないようにする。
 - **時刻は UTC RFC 3339（小数秒、`Z`）の TEXT とする。** SQLite 上で文字列順比較できる canonical 表現だけを許可する。
 - **enum は TEXT で保存する。** CHECK 制約で将来値を閉じない。アプリ側で `unknown` / `other` と未知値を安全に扱う。
+
+現時点の `0001_foundation` migration は、上記の最終モデルへ移行する前の foundation subset である。特に `scope_targets`、Scope 単位の include/exclude・上限・承認情報、Observation 系テーブルは未実装であり、実装済みと見なして既定値を補完してはならない。
 
 ## 2. SQLite の運用設定
 
